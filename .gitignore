@@ -1,0 +1,37 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# Foundry
+contracts/out/
+contracts/cache/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Subgraph
+subgraph/build/
+subgraph/generated/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vercel
+.vercel/
+
+# Coverage
+lcov.info
+coverage/
+
+# Misc
+*.log
+.gas-snapshot
+
