@@ -2,50 +2,126 @@
 pragma solidity 0.8.24;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {YieldVault} from "./YieldVault.sol";
 
 /// @title VaultFactory
-/// @notice Factory contract that deploys ERC-1967 proxy instances of YieldVault
-/// @dev Each vault is a minimal proxy sharing the same YieldVault implementation
-contract VaultFactory is Ownable {
-    /// @notice The current implementation address for new YieldVault proxies
+/// @notice Factory that deploys ERC-1967 proxy instances of YieldVault.
+/// @dev Each vault is an independent UUPS proxy sharing the same YieldVault implementation.
+///      Asset creation is gated behind an owner-managed allowlist to prevent deployment of
+///      arbitrary or malicious tokens.
+///      Note: `InterestRateModel` is a standalone rate oracle reserved for a future
+///      lending/borrowing extension. Vault yield rates are owner-controlled and are not
+///      dynamically derived from utilization in this version.
+contract VaultFactory is Ownable2Step {
+    // -------------------------------------------------------------------------
+    // State
+    // -------------------------------------------------------------------------
+
+    /// @notice The YieldVault logic contract used when deploying new proxies.
     address public implementation;
 
-    /// @notice Maps underlying asset to its deployed vaults
+    /// @notice Maps an underlying asset to all vaults deployed for it.
     mapping(address => address[]) public assetToVaults;
 
-    /// @notice List of all deployed vaults
+    /// @notice Flat list of every vault deployed by this factory.
     address[] public vaultList;
 
-    error ZeroAddress();
+    /// @notice Tracks which underlying assets are approved for vault creation.
+    mapping(address => bool) public approvedAssets;
 
-    /// @notice Emitted when a new vault is deployed
-    /// @param vault The address of the new vault proxy
-    /// @param asset The underlying asset
-    /// @param owner The owner of the new vault
+    // -------------------------------------------------------------------------
+    // Errors
+    // -------------------------------------------------------------------------
+
+    error ZeroAddress();
+    error NotAContract(address provided);
+    /// @notice Thrown when `createVault` is called with an asset that has not been approved.
+    /// @param asset The asset address that was rejected.
+    error AssetNotApproved(address asset);
+
+    // -------------------------------------------------------------------------
+    // Events
+    // -------------------------------------------------------------------------
+
+    /// @notice Emitted when a new vault proxy is deployed.
+    /// @param vault The address of the newly created vault proxy.
+    /// @param asset The underlying asset of the vault.
+    /// @param owner The initial owner assigned to the vault.
     event VaultCreated(address indexed vault, address indexed asset, address indexed owner);
 
-    /// @notice Emitted when the implementation address is updated
-    /// @param oldImplementation The previous implementation
-    /// @param newImplementation The new implementation
+    /// @notice Emitted when the shared implementation address is updated.
+    /// @param oldImplementation The previous implementation address.
+    /// @param newImplementation The new implementation address.
     event ImplementationUpdated(address oldImplementation, address newImplementation);
 
-    /// @notice Initializes the factory with the vault implementation
-    /// @param implementation_ The address of the logic contract
-    /// @param initialOwner The address of the factory owner
+    /// @notice Emitted when an asset is added to the creation allowlist.
+    /// @param asset The approved asset address.
+    event AssetApproved(address indexed asset);
+
+    /// @notice Emitted when an asset is removed from the creation allowlist.
+    /// @param asset The revoked asset address.
+    event AssetRevoked(address indexed asset);
+
+    // -------------------------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------------------------
+
+    /// @notice Deploys the factory and sets the initial vault implementation.
+    /// @param implementation_ The address of the deployed YieldVault logic contract.
+    /// @param initialOwner The address that will own and administer this factory.
     constructor(address implementation_, address initialOwner) Ownable(initialOwner) {
         if (implementation_ == address(0)) revert ZeroAddress();
+        if (implementation_.code.length == 0) revert NotAContract(implementation_);
         implementation = implementation_;
         emit ImplementationUpdated(address(0), implementation_);
     }
 
-    /// @notice Deploys a new YieldVault proxy
-    /// @param asset The underlying asset
-    /// @param name The name of the vault token
-    /// @param symbol The symbol of the vault token
-    /// @param initialYieldBps The initial yield rate in basis points
-    /// @return vault The address of the newly deployed vault
+    // -------------------------------------------------------------------------
+    // Owner functions
+    // -------------------------------------------------------------------------
+
+    /// @notice Adds an asset to the vault creation allowlist.
+    /// @param asset The ERC-20 token address to approve.
+    function approveAsset(address asset) external onlyOwner {
+        if (asset == address(0)) revert ZeroAddress();
+        if (asset.code.length == 0) revert NotAContract(asset);
+        approvedAssets[asset] = true;
+        emit AssetApproved(asset);
+    }
+
+    /// @notice Removes an asset from the vault creation allowlist.
+    /// @dev Existing vaults for the asset are unaffected.
+    /// @param asset The ERC-20 token address to revoke.
+    function revokeAsset(address asset) external onlyOwner {
+        approvedAssets[asset] = false;
+        emit AssetRevoked(asset);
+    }
+
+    /// @notice Replaces the implementation address used for future vault proxies.
+    /// @dev Existing proxies are unaffected; each vault upgrades independently via UUPS.
+    /// @param newImplementation The address of the new YieldVault logic contract.
+    function setImplementation(address newImplementation) external onlyOwner {
+        if (newImplementation == address(0)) revert ZeroAddress();
+        if (newImplementation.code.length == 0) revert NotAContract(newImplementation);
+        address old = implementation;
+        implementation = newImplementation;
+        emit ImplementationUpdated(old, newImplementation);
+    }
+
+    // -------------------------------------------------------------------------
+    // Vault creation
+    // -------------------------------------------------------------------------
+
+    /// @notice Deploys a new ERC-1967 YieldVault proxy and registers it in the factory.
+    /// @dev The caller becomes the owner of the newly created vault.
+    ///      The asset must be pre-approved via `approveAsset`.
+    /// @param asset The address of the ERC-20 underlying asset.
+    /// @param name The name of the vault share token.
+    /// @param symbol The symbol of the vault share token.
+    /// @param initialYieldBps The initial annual yield rate in basis points.
+    /// @return vault The address of the deployed vault proxy.
     function createVault(
         address asset,
         string memory name,
@@ -53,6 +129,8 @@ contract VaultFactory is Ownable {
         uint256 initialYieldBps
     ) external returns (address vault) {
         if (asset == address(0)) revert ZeroAddress();
+        if (asset.code.length == 0) revert NotAContract(asset);
+        if (!approvedAssets[asset]) revert AssetNotApproved(asset);
 
         bytes memory data = abi.encodeWithSelector(
             YieldVault.initialize.selector,
@@ -72,24 +150,19 @@ contract VaultFactory is Ownable {
         emit VaultCreated(vault, asset, msg.sender);
     }
 
-    /// @notice Updates the implementation address for future proxies
-    /// @param newImplementation The new logic contract address
-    function setImplementation(address newImplementation) external onlyOwner {
-        if (newImplementation == address(0)) revert ZeroAddress();
-        address old = implementation;
-        implementation = newImplementation;
-        emit ImplementationUpdated(old, newImplementation);
-    }
+    // -------------------------------------------------------------------------
+    // Views
+    // -------------------------------------------------------------------------
 
-    /// @notice Returns the list of vaults for a given asset
-    /// @param asset The underlying asset
-    /// @return A list of vault addresses
+    /// @notice Returns all vaults deployed for a given underlying asset.
+    /// @param asset The ERC-20 asset address to query.
+    /// @return An array of vault proxy addresses.
     function getVaults(address asset) external view returns (address[] memory) {
         return assetToVaults[asset];
     }
 
-    /// @notice Returns the total number of vaults deployed
-    /// @return The count of vaults
+    /// @notice Returns the total number of vaults deployed by this factory.
+    /// @return The length of `vaultList`.
     function allVaultsCount() external view returns (uint256) {
         return vaultList.length;
     }

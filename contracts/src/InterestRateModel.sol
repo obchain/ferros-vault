@@ -2,42 +2,64 @@
 pragma solidity 0.8.24;
 
 /// @title InterestRateModel
-/// @notice Two-slope utilization-based interest rate model inspired by Compound
-/// @dev Stateless library — all functions are pure, no storage reads/writes
-contract InterestRateModel {
-    /// @notice Basis points divisor (100% = 10,000)
-    uint256 public constant BPS_DIVISOR = 10_000;
+/// @notice Two-slope utilization-based interest rate model inspired by Compound.
+/// @dev Stateless library — all functions are pure, no storage reads or writes.
+///      This is a standalone rate oracle reserved for a future lending/borrowing extension.
+///      The current YieldVault uses a fixed `yieldRateBps` set by the owner and does not
+///      consume this library at runtime.
+library InterestRateModel {
+    // -------------------------------------------------------------------------
+    // Constants
+    // -------------------------------------------------------------------------
 
-    /// @notice The utilization rate (kink) where the interest rate slope changes
-    uint256 public constant KINK = 8_000; // 80%
+    /// @notice Basis points divisor (100% = 10,000).
+    uint256 internal constant BPS_DIVISOR = 10_000;
 
-    /// @notice The base interest rate (at 0% utilization)
-    uint256 public constant BASE_RATE = 200; // 2%
+    /// @notice The utilization kink — above this point the jump multiplier activates.
+    uint256 internal constant KINK = 8_000; // 80%
 
-    /// @notice The multiplier of utilization before the kink
-    uint256 public constant MULTIPLIER = 1_000; // 10%
+    /// @notice The base borrow rate at 0% utilization.
+    uint256 internal constant BASE_RATE = 200; // 2%
 
-    /// @notice The multiplier of utilization after the kink
-    uint256 public constant JUMP_MULTIPLIER = 10_000; // 100%
+    /// @notice The rate multiplier applied below the kink.
+    uint256 internal constant MULTIPLIER = 1_000; // 10%
 
-    /// @notice The percentage of interest kept by the protocol
-    uint256 public constant RESERVE_FACTOR = 1_000; // 10%
+    /// @notice The rate multiplier applied above the kink.
+    uint256 internal constant JUMP_MULTIPLIER = 10_000; // 100%
 
-    /// @notice Calculates the utilization rate of the pool
-    /// @param borrows Total amount borrowed
-    /// @param liquidity Total liquidity in the pool
-    /// @return The utilization rate in basis points (BPS)
-    function getUtilization(uint256 borrows, uint256 liquidity) public pure returns (uint256) {
+    /// @notice The fraction of borrow interest retained as protocol reserves.
+    uint256 internal constant RESERVE_FACTOR = 1_000; // 10%
+
+    // Compile-time invariants — will cause an underflow compile error if violated.
+    uint256 private constant _ASSERT_RESERVE = BPS_DIVISOR - RESERVE_FACTOR;
+    uint256 private constant _ASSERT_KINK = BPS_DIVISOR - KINK;
+
+    // -------------------------------------------------------------------------
+    // Errors
+    // -------------------------------------------------------------------------
+
+    /// @notice Thrown when `borrows > 0` but `liquidity == 0`, which is an impossible pool state.
+    error InvalidPoolState();
+
+    // -------------------------------------------------------------------------
+    // Functions
+    // -------------------------------------------------------------------------
+
+    /// @notice Calculates the pool utilization rate.
+    /// @param borrows Total outstanding borrows.
+    /// @param liquidity Total liquidity supplied to the pool.
+    /// @return The utilization rate in basis points.
+    function getUtilization(uint256 borrows, uint256 liquidity) internal pure returns (uint256) {
         if (borrows == 0) return 0;
-        if (liquidity == 0) return BPS_DIVISOR;
+        if (liquidity == 0) revert InvalidPoolState();
         return (borrows * BPS_DIVISOR) / liquidity;
     }
 
-    /// @notice Calculates the annual borrow interest rate
-    /// @param borrows Total amount borrowed
-    /// @param liquidity Total liquidity in the pool
-    /// @return The borrow rate in basis points (BPS)
-    function getBorrowRate(uint256 borrows, uint256 liquidity) public pure returns (uint256) {
+    /// @notice Calculates the annual borrow interest rate for the given pool state.
+    /// @param borrows Total outstanding borrows.
+    /// @param liquidity Total liquidity supplied to the pool.
+    /// @return The annual borrow rate in basis points.
+    function getBorrowRate(uint256 borrows, uint256 liquidity) internal pure returns (uint256) {
         uint256 util = getUtilization(borrows, liquidity);
 
         if (util <= KINK) {
@@ -49,15 +71,14 @@ contract InterestRateModel {
         }
     }
 
-    /// @notice Calculates the annual supply interest rate
-    /// @param borrows Total amount borrowed
-    /// @param liquidity Total liquidity in the pool
-    /// @return The supply rate in basis points (BPS)
-    function getSupplyRate(uint256 borrows, uint256 liquidity) external pure returns (uint256) {
+    /// @notice Calculates the annual supply interest rate for the given pool state.
+    /// @dev supplyRate = borrowRate * utilization * (1 − reserveFactor) / BPS_DIVISOR²
+    /// @param borrows Total outstanding borrows.
+    /// @param liquidity Total liquidity supplied to the pool.
+    /// @return The annual supply rate in basis points.
+    function getSupplyRate(uint256 borrows, uint256 liquidity) internal pure returns (uint256) {
         uint256 util = getUtilization(borrows, liquidity);
         uint256 borrowRate = getBorrowRate(borrows, liquidity);
-        
-        // supplyRate = borrowRate * utilization * (1 - reserveFactor)
         uint256 spread = BPS_DIVISOR - RESERVE_FACTOR;
         return (borrowRate * util * spread) / (BPS_DIVISOR * BPS_DIVISOR);
     }
