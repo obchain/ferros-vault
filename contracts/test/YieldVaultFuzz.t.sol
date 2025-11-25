@@ -6,9 +6,10 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {YieldVault} from "../src/YieldVault.sol";
+import {MockYieldSource} from "../src/strategies/MockYieldSource.sol";
 
 contract MockERC20 is ERC20 {
-    constructor() ERC20("Mock Token", "MTK") {}
+    constructor() ERC20("Fuzz Token", "FZZ") {}
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
@@ -17,13 +18,16 @@ contract MockERC20 is ERC20 {
 
 contract YieldVaultFuzzTest is Test {
     MockERC20 internal asset;
+    MockYieldSource internal yieldSource;
     YieldVault internal vault;
 
     address internal owner = makeAddr("owner");
     address internal user = makeAddr("user");
+    address internal treasury = makeAddr("treasury");
 
     function setUp() public {
         asset = new MockERC20();
+        yieldSource = new MockYieldSource(address(asset), 1_000, owner); // 10% APY
 
         YieldVault impl = new YieldVault();
         bytes memory initData = abi.encodeWithSelector(
@@ -31,18 +35,15 @@ contract YieldVaultFuzzTest is Test {
             address(asset),
             "Fuzz Vault",
             "fvFUZZ",
-            uint256(500),
+            address(yieldSource),
+            treasury,
+            uint256(1_000), // 10% perf fee
             owner
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         vault = YieldVault(address(proxy));
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /// @dev Deposits `assets` as `user`, returns shares received.
     function _deposit(uint256 assets) internal returns (uint256 shares) {
         asset.mint(user, assets);
         vm.startPrank(user);
@@ -51,94 +52,88 @@ contract YieldVaultFuzzTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev Sends `amount` extra tokens to the vault to cover yield obligations.
-    function _fundVault(uint256 amount) internal {
-        asset.mint(owner, amount);
-        vm.prank(owner);
-        asset.transfer(address(vault), amount);
-    }
-
     // -------------------------------------------------------------------------
     // Invariant: deposit always mints > 0 shares when assets > 0
     // -------------------------------------------------------------------------
 
     function testFuzz_Deposit_AlwaysMintsShares(uint256 assets) public {
-        // Lower bound avoids rounding to zero with _decimalsOffset=18 at near-empty vault
         assets = bound(assets, 1e6, type(uint80).max);
-
         uint256 shares = _deposit(assets);
-        assertGt(shares, 0, "deposit > 0 must mint > 0 shares");
+        assertGt(shares, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Invariant: assets forwarded to strategy equal deposit amount
+    // -------------------------------------------------------------------------
+
+    function testFuzz_Deposit_FullyForwardedToStrategy(uint256 assets) public {
+        assets = bound(assets, 1e6, type(uint80).max);
+        _deposit(assets);
+        assertEq(asset.balanceOf(address(yieldSource)), assets);
     }
 
     // -------------------------------------------------------------------------
     // Invariant: withdraw never returns more than deposited
     // -------------------------------------------------------------------------
 
-    function testFuzz_Withdraw_NeverExceedsTotalAssets(uint256 assets) public {
+    function testFuzz_Withdraw_NeverExceedsDeposit(uint256 assets) public {
         assets = bound(assets, 1e6, type(uint80).max);
-
         _deposit(assets);
-        uint256 totalBefore = vault.totalAssets();
 
-        // Withdraw exactly what was deposited (shares round down so this is safe)
         uint256 maxWithdraw = vault.maxWithdraw(user);
         if (maxWithdraw == 0) return;
 
+        uint256 balBefore = asset.balanceOf(user);
         vm.prank(user);
         vault.withdraw(maxWithdraw, user, user);
 
-        assertLe(totalBefore - vault.totalAssets(), assets + 1, "withdrawn > deposited");
+        assertLe(asset.balanceOf(user) - balBefore, assets + 1);
     }
 
     // -------------------------------------------------------------------------
-    // Invariant: convertToAssets(convertToShares(x)) is within 1 wei
+    // Invariant: convertToAssets(convertToShares(x)) within 1 wei
     // -------------------------------------------------------------------------
 
     function testFuzz_ConvertRoundTrip_WithinOneWei(uint256 assets) public {
-        // Seed vault first so there is a non-trivial share price
-        _deposit(1_000e18);
-
+        _deposit(1_000e18); // seed vault first
         assets = bound(assets, 1e6, type(uint80).max);
         uint256 shares = vault.convertToShares(assets);
         uint256 back = vault.convertToAssets(shares);
-
-        // ERC-4626 allows round-down; back <= assets always, never exceeds
-        assertLe(back, assets + 1, "round-trip must not exceed original assets");
+        assertLe(back, assets + 1);
     }
 
     // -------------------------------------------------------------------------
-    // Invariant: totalAssets never decreases without a user withdrawal
+    // Invariant: totalAssets never decreases without withdrawal
     // -------------------------------------------------------------------------
 
-    function testFuzz_TotalAssets_MonotonicallyIncreases(uint256 assets, uint256 elapsed) public {
+    function testFuzz_TotalAssets_NeverDecreasesWithoutWithdraw(uint256 assets, uint256 elapsed) public {
         assets = bound(assets, 1e6, type(uint80).max);
-        elapsed = bound(elapsed, 1 hours + 1, 365 days);
+        elapsed = bound(elapsed, 1, 365 days);
 
         _deposit(assets);
-
         uint256 before = vault.totalAssets();
-        vm.warp(block.timestamp + elapsed);
 
-        assertGe(vault.totalAssets(), before, "totalAssets must not decrease without withdraw");
+        vm.warp(block.timestamp + elapsed);
+        assertGe(vault.totalAssets(), before);
     }
 
     // -------------------------------------------------------------------------
-    // Invariant: share price never decreases on yield rate update
+    // Invariant: performance fee never exceeds gain
     // -------------------------------------------------------------------------
 
-    function testFuzz_SetYieldRate_SharePriceContinuous(uint256 assets, uint256 newRate) public {
+    function testFuzz_PerformanceFee_NeverExceedsGain(uint256 assets, uint256 elapsed) public {
         assets = bound(assets, 1e6, type(uint80).max);
-        newRate = bound(newRate, 0, 5_000);
+        elapsed = bound(elapsed, 1 days, 365 days);
 
-        uint256 shares = _deposit(assets);
-        uint256 assetsBefore = vault.convertToAssets(shares);
+        _deposit(assets);
+        vm.warp(block.timestamp + elapsed);
+        yieldSource.accrueYield();
 
-        vm.warp(block.timestamp + 1 hours + 1);
-        vm.prank(owner);
-        vault.setYieldRate(newRate);
+        uint256 gain = vault.totalAssets() - vault.lastHarvestAssets();
+        vault.harvest();
 
-        uint256 assetsAfter = vault.convertToAssets(shares);
-        assertGe(assetsAfter, assetsBefore, "share price must not decrease on rate change");
+        uint256 feeAssets = vault.convertToAssets(vault.balanceOf(treasury));
+        assertLe(feeAssets, gain + 1);
     }
 
     // -------------------------------------------------------------------------
@@ -147,33 +142,28 @@ contract YieldVaultFuzzTest is Test {
 
     function testFuzz_Redeem_AlwaysReturnsAssets(uint256 assets) public {
         assets = bound(assets, 1e6, type(uint80).max);
-
         uint256 shares = _deposit(assets);
-        assertGt(shares, 0, "precondition: shares must be non-zero");
 
         vm.prank(user);
         uint256 received = vault.redeem(shares, user, user);
-
-        assertGt(received, 0, "redeem non-zero shares must return non-zero assets");
+        assertGt(received, 0);
     }
 
     // -------------------------------------------------------------------------
-    // Invariant: accrued yield is bounded by the configured rate
+    // Invariant: fee config change never affects user principal
     // -------------------------------------------------------------------------
 
-    function testFuzz_AccruedYield_BoundedByRate(uint256 assets, uint256 elapsed) public {
+    function testFuzz_FeeChange_DoesNotAffectPrincipal(uint256 assets, uint256 newFee) public {
         assets = bound(assets, 1e6, type(uint80).max);
-        elapsed = bound(elapsed, 1 hours + 1, 730 days);
+        newFee = bound(newFee, 0, 3_000);
 
-        _deposit(assets);
-        _fundVault(assets); // cover yield obligations
+        uint256 shares = _deposit(assets);
+        uint256 assetsBefore = vault.convertToAssets(shares);
 
-        uint256 totalBase = vault.totalAssets();
-        vm.warp(block.timestamp + elapsed);
-        vault.accrueYield();
+        vm.prank(owner);
+        vault.setPerformanceFeeBps(newFee);
 
-        // Max possible yield: MAX_YIELD_RATE_BPS * base * elapsed / (BPS_DIVISOR * SECONDS_PER_YEAR)
-        uint256 maxYield = (totalBase * 5_000 * elapsed) / (10_000 * 365 days);
-        assertLe(vault.accumulatedYield(), maxYield + 1, "yield exceeds theoretical max");
+        uint256 assetsAfter = vault.convertToAssets(shares);
+        assertEq(assetsAfter, assetsBefore, "fee config change must not alter share value");
     }
 }

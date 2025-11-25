@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {Test, console2} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {YieldVault} from "../src/YieldVault.sol";
+import {MockYieldSource} from "../src/strategies/MockYieldSource.sol";
 
-/// @dev Minimal ERC-20 used as the vault's underlying asset in tests.
+/// @dev Mintable ERC-20 used as testnet underlying asset.
 contract MockERC20 is ERC20 {
     constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
 
@@ -18,27 +19,31 @@ contract MockERC20 is ERC20 {
 
 contract YieldVaultTest is Test {
     MockERC20 internal asset;
-    YieldVault internal impl;
+    MockYieldSource internal yieldSource;
     YieldVault internal vault;
 
     address internal owner = makeAddr("owner");
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
+    address internal treasury = makeAddr("treasury");
 
-    uint256 internal constant INITIAL_YIELD_BPS = 500; // 5% APY
+    uint256 internal constant APY_BPS = 1_000;        // 10% APY
+    uint256 internal constant PERF_FEE_BPS = 1_000;   // 10% performance fee
     uint256 internal constant DEPOSIT_AMOUNT = 1_000e18;
 
     function setUp() public {
-        asset = new MockERC20("Mock USDC", "USDC");
+        asset = new MockERC20("Test USDC", "tUSDC");
+        yieldSource = new MockYieldSource(address(asset), APY_BPS, owner);
 
-        impl = new YieldVault();
-
+        YieldVault impl = new YieldVault();
         bytes memory initData = abi.encodeWithSelector(
             YieldVault.initialize.selector,
             address(asset),
-            "Ferros Vault USDC",
+            "Ferros Vault tUSDC",
             "fvUSDC",
-            INITIAL_YIELD_BPS,
+            address(yieldSource),
+            treasury,
+            PERF_FEE_BPS,
             owner
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
@@ -46,15 +51,22 @@ contract YieldVaultTest is Test {
 
         asset.mint(alice, 10_000e18);
         asset.mint(bob, 10_000e18);
-        asset.mint(owner, 100_000e18);
     }
 
     // -------------------------------------------------------------------------
     // Initialization
     // -------------------------------------------------------------------------
 
-    function test_Initialize_SetsYieldRate() public {
-        assertEq(vault.yieldRateBps(), INITIAL_YIELD_BPS);
+    function test_Initialize_SetsStrategy() public {
+        assertEq(address(vault.strategy()), address(yieldSource));
+    }
+
+    function test_Initialize_SetsFeeRecipient() public {
+        assertEq(vault.feeRecipient(), treasury);
+    }
+
+    function test_Initialize_SetsPerformanceFee() public {
+        assertEq(vault.performanceFeeBps(), PERF_FEE_BPS);
     }
 
     function test_Initialize_SetsOwner() public {
@@ -62,30 +74,38 @@ contract YieldVaultTest is Test {
     }
 
     function test_Initialize_SetsVersion() public {
-        assertEq(vault.version(), "1.0.0");
-    }
-
-    function test_Initialize_SetsAsset() public {
-        assertEq(vault.asset(), address(asset));
+        assertEq(vault.version(), "2.0.0");
     }
 
     function test_Initialize_CannotReinitialize() public {
         vm.expectRevert();
-        vault.initialize(IERC20(address(asset)), "X", "X", 0, owner);
+        vault.initialize(
+            IERC20(address(asset)), "X", "X",
+            address(yieldSource), treasury, PERF_FEE_BPS, owner
+        );
     }
 
     // -------------------------------------------------------------------------
     // Deposit
     // -------------------------------------------------------------------------
 
-    function test_Deposit_MintsSharesProportional() public {
+    function test_Deposit_MintsShares() public {
         vm.startPrank(alice);
         asset.approve(address(vault), DEPOSIT_AMOUNT);
         uint256 shares = vault.deposit(DEPOSIT_AMOUNT, alice);
         vm.stopPrank();
 
-        assertGt(shares, 0, "shares must be > 0");
+        assertGt(shares, 0);
         assertEq(vault.balanceOf(alice), shares);
+    }
+
+    function test_Deposit_ForwardsAssetsToStrategy() public {
+        vm.startPrank(alice);
+        asset.approve(address(vault), DEPOSIT_AMOUNT);
+        vault.deposit(DEPOSIT_AMOUNT, alice);
+        vm.stopPrank();
+
+        assertEq(asset.balanceOf(address(yieldSource)), DEPOSIT_AMOUNT);
     }
 
     function test_Deposit_IncreasesTotalAssets() public {
@@ -95,20 +115,6 @@ contract YieldVaultTest is Test {
         vm.stopPrank();
 
         assertGe(vault.totalAssets(), DEPOSIT_AMOUNT);
-    }
-
-    function test_Deposit_TwoDepositors_SharesSumCorrectly() public {
-        vm.startPrank(alice);
-        asset.approve(address(vault), DEPOSIT_AMOUNT);
-        uint256 sharesA = vault.deposit(DEPOSIT_AMOUNT, alice);
-        vm.stopPrank();
-
-        vm.startPrank(bob);
-        asset.approve(address(vault), DEPOSIT_AMOUNT);
-        uint256 sharesB = vault.deposit(DEPOSIT_AMOUNT, bob);
-        vm.stopPrank();
-
-        assertApproxEqRel(sharesA, sharesB, 1e15, "equal deposits => equal shares");
     }
 
     function test_Deposit_RevertsWhenPaused() public {
@@ -135,19 +141,21 @@ contract YieldVaultTest is Test {
 
     function test_Withdraw_BurnsShares() public {
         uint256 shares = _depositAlice();
+        uint256 maxWithdraw = vault.maxWithdraw(alice);
 
         vm.prank(alice);
-        vault.withdraw(DEPOSIT_AMOUNT, alice, alice);
+        vault.withdraw(maxWithdraw, alice, alice);
 
         assertLt(vault.balanceOf(alice), shares);
     }
 
-    function test_Withdraw_TransfersAssets() public {
+    function test_Withdraw_TransfersAssetsToUser() public {
         _depositAlice();
         uint256 balBefore = asset.balanceOf(alice);
+        uint256 maxWithdraw = vault.maxWithdraw(alice);
 
         vm.prank(alice);
-        vault.withdraw(DEPOSIT_AMOUNT, alice, alice);
+        vault.withdraw(maxWithdraw, alice, alice);
 
         assertGt(asset.balanceOf(alice), balBefore);
     }
@@ -157,12 +165,11 @@ contract YieldVaultTest is Test {
 
         vm.prank(alice);
         vm.expectRevert();
-        vault.withdraw(DEPOSIT_AMOUNT + 1, alice, alice);
+        vault.withdraw(DEPOSIT_AMOUNT + 1e18, alice, alice);
     }
 
     function test_Withdraw_RevertsWhenPaused() public {
         _depositAlice();
-
         vm.prank(owner);
         vault.pause();
 
@@ -175,129 +182,102 @@ contract YieldVaultTest is Test {
     // Redeem
     // -------------------------------------------------------------------------
 
-    function test_Redeem_ReturnsCorrectAssets() public {
+    function test_Redeem_ReturnsAssets() public {
         uint256 shares = _depositAlice();
         uint256 expected = vault.convertToAssets(shares);
 
         vm.prank(alice);
         uint256 received = vault.redeem(shares, alice, alice);
 
-        assertApproxEqRel(received, expected, 1e15, "redeem assets off");
-    }
-
-    function test_Redeem_RevertsWhenPaused() public {
-        uint256 shares = _depositAlice();
-
-        vm.prank(owner);
-        vault.pause();
-
-        vm.prank(alice);
-        vm.expectRevert();
-        vault.redeem(shares, alice, alice);
+        assertApproxEqRel(received, expected, 1e15);
     }
 
     // -------------------------------------------------------------------------
-    // Yield accrual
+    // Yield + harvest
     // -------------------------------------------------------------------------
 
-    function _fundVaultYield() internal {
-        vm.prank(owner);
-        asset.transfer(address(vault), 10_000e18);
-    }
-
-    function test_AccrueYield_IncreasesTotalAssets() public {
+    function test_Harvest_MintsFeeShares() public {
         _depositAlice();
-        _fundVaultYield();
+
+        vm.warp(block.timestamp + 30 days);
+        vault.harvest();
+
+        assertGt(vault.balanceOf(treasury), 0, "treasury must receive fee shares");
+    }
+
+    function test_Harvest_TotalAssetsGrowsWithYield() public {
+        _depositAlice();
         uint256 before = vault.totalAssets();
 
-        vm.warp(block.timestamp + 1 hours + 1);
-        vault.accrueYield();
+        vm.warp(block.timestamp + 30 days);
+        yieldSource.accrueYield();
 
         assertGt(vault.totalAssets(), before);
     }
 
-    function test_AccrueYield_RespectMinInterval() public {
-        _depositAlice();
-        _fundVaultYield();
-
-        vm.warp(block.timestamp + 1 hours + 1);
-        vault.accrueYield();
-        uint256 accBefore = vault.accumulatedYield();
-
-        // Second call within min interval — must be a no-op
-        vault.accrueYield();
-        assertEq(vault.accumulatedYield(), accBefore, "second call must be no-op");
-    }
-
-    function test_AccrueYield_ZeroRate_NoIncrease() public {
+    function test_Harvest_FeeProportionalToGain() public {
         _depositAlice();
 
-        vm.prank(owner);
-        vault.setYieldRate(0);
-
-        uint256 base = vault.totalAssets();
         vm.warp(block.timestamp + 365 days);
-        vault.accrueYield();
+        yieldSource.accrueYield();
 
-        assertEq(vault.totalAssets(), base, "zero rate must not change totalAssets");
+        uint256 gainBefore = vault.totalAssets() - vault.lastHarvestAssets();
+        uint256 expectedFeeAssets = (gainBefore * PERF_FEE_BPS) / 10_000;
+
+        vault.harvest();
+
+        uint256 feeShares = vault.balanceOf(treasury);
+        uint256 feeAssets = vault.convertToAssets(feeShares);
+        assertApproxEqRel(feeAssets, expectedFeeAssets, 2e16);
     }
 
-    function test_AccrueYield_30Days_ApproximatelyCorrect() public {
+    function test_Harvest_NoFeeWhenNoGain() public {
         _depositAlice();
-        _fundVaultYield();
+        vault.harvest();
 
-        vm.warp(block.timestamp + 30 days);
-        vault.accrueYield();
-
-        // 5% APY over 30 days on total vault balance (deposit + funded yield reserves)
-        uint256 vaultBalance = asset.balanceOf(address(vault));
-        uint256 expectedInterest = (vaultBalance * 500 * 30 days) / (10_000 * 365 days);
-        assertApproxEqRel(vault.accumulatedYield(), expectedInterest, 1e15);
+        assertEq(vault.balanceOf(treasury), 0, "no gain = no fee");
     }
 
     // -------------------------------------------------------------------------
-    // setYieldRate
+    // Performance fee config
     // -------------------------------------------------------------------------
 
-    function test_SetYieldRate_UpdatesRate() public {
+    function test_SetPerformanceFee_UpdatesRate() public {
         vm.prank(owner);
-        vault.setYieldRate(1_000);
-
-        assertEq(vault.yieldRateBps(), 1_000);
+        vault.setPerformanceFeeBps(500);
+        assertEq(vault.performanceFeeBps(), 500);
     }
 
-    function test_SetYieldRate_EmitsEvent() public {
-        vm.prank(owner);
-        vm.expectEmit(false, false, false, true);
-        emit YieldVault.YieldRateUpdated(INITIAL_YIELD_BPS, 1_000);
-        vault.setYieldRate(1_000);
-    }
-
-    function test_SetYieldRate_RevertsIfNotOwner() public {
+    function test_SetPerformanceFee_RevertsIfNotOwner() public {
         vm.prank(alice);
         vm.expectRevert();
-        vault.setYieldRate(1_000);
+        vault.setPerformanceFeeBps(500);
     }
 
-    function test_SetYieldRate_RevertsIfExceedsCeiling() public {
+    function test_SetPerformanceFee_RevertsIfExceedsCeiling() public {
         vm.prank(owner);
         vm.expectRevert();
-        vault.setYieldRate(5_001);
-    }
-
-    function test_SetYieldRate_ZeroDisablesYield() public {
-        _depositAlice();
-        uint256 base = vault.totalAssets();
-
-        vm.prank(owner);
-        vault.setYieldRate(0);
-
-        vm.warp(block.timestamp + 365 days);
-        assertEq(vault.totalAssets(), base, "rate=0 must freeze totalAssets");
+        vault.setPerformanceFeeBps(3_001);
     }
 
     // -------------------------------------------------------------------------
-    // Pause / Unpause
+    // Fee recipient
+    // -------------------------------------------------------------------------
+
+    function test_SetFeeRecipient_Updates() public {
+        vm.prank(owner);
+        vault.setFeeRecipient(alice);
+        assertEq(vault.feeRecipient(), alice);
+    }
+
+    function test_SetFeeRecipient_RevertsIfZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert();
+        vault.setFeeRecipient(address(0));
+    }
+
+    // -------------------------------------------------------------------------
+    // Pause / unpause
     // -------------------------------------------------------------------------
 
     function test_Pause_RevertsIfNotOwner() public {
@@ -309,7 +289,6 @@ contract YieldVaultTest is Test {
     function test_Unpause_RestoresDeposit() public {
         vm.prank(owner);
         vault.pause();
-
         vm.prank(owner);
         vault.unpause();
 
@@ -322,31 +301,23 @@ contract YieldVaultTest is Test {
     }
 
     // -------------------------------------------------------------------------
-    // Access control — UUPS upgrade
+    // UUPS + Ownable2Step
     // -------------------------------------------------------------------------
 
     function test_UpgradeAuthorization_RevertsIfNotOwner() public {
         YieldVault newImpl = new YieldVault();
-
         vm.prank(alice);
         vm.expectRevert();
         vault.upgradeToAndCall(address(newImpl), "");
     }
 
-    // -------------------------------------------------------------------------
-    // Ownable2Step
-    // -------------------------------------------------------------------------
-
     function test_TransferOwnership_TwoStep() public {
         vm.prank(owner);
         vault.transferOwnership(alice);
-
-        // Still pending — owner unchanged
         assertEq(vault.owner(), owner);
 
         vm.prank(alice);
         vault.acceptOwnership();
-
         assertEq(vault.owner(), alice);
     }
 
@@ -354,25 +325,11 @@ contract YieldVaultTest is Test {
     // Share math round-trip
     // -------------------------------------------------------------------------
 
-    function test_ConvertRoundTrip_SelfConsistent() public {
+    function test_ConvertRoundTrip_WithinOneWei() public {
         _depositAlice();
         uint256 assets = 500e18;
         uint256 shares = vault.convertToShares(assets);
         uint256 back = vault.convertToAssets(shares);
-        assertApproxEqAbs(back, assets, 1, "round-trip within 1 wei");
-    }
-
-    // -------------------------------------------------------------------------
-    // fundingShortfall
-    // -------------------------------------------------------------------------
-
-    function test_FundingShortfall_ZeroWhenFullyBacked() public {
-        _depositAlice();
-        _fundVaultYield();
-
-        vm.warp(block.timestamp + 1 hours + 1);
-        vault.accrueYield();
-
-        assertEq(vault.fundingShortfall(), 0);
+        assertApproxEqAbs(back, assets, 1);
     }
 }

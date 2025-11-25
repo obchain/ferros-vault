@@ -120,16 +120,23 @@ contract VaultFactory is Ownable2Step {
     /// @param asset The address of the ERC-20 underlying asset.
     /// @param name The name of the vault share token.
     /// @param symbol The symbol of the vault share token.
-    /// @param initialYieldBps The initial annual yield rate in basis points.
+    /// @param strategy The IYieldStrategy the vault will deposit into.
+    /// @param feeRecipient Address that receives performance fee shares.
+    /// @param performanceFeeBps Initial performance fee in basis points.
     /// @return vault The address of the deployed vault proxy.
     function createVault(
         address asset,
         string memory name,
         string memory symbol,
-        uint256 initialYieldBps
+        address strategy,
+        address feeRecipient,
+        uint256 performanceFeeBps
     ) external returns (address vault) {
         if (asset == address(0)) revert ZeroAddress();
+        if (strategy == address(0)) revert ZeroAddress();
+        if (feeRecipient == address(0)) revert ZeroAddress();
         if (asset.code.length == 0) revert NotAContract(asset);
+        if (strategy.code.length == 0) revert NotAContract(strategy);
         if (!approvedAssets[asset]) revert AssetNotApproved(asset);
 
         bytes memory data = abi.encodeWithSelector(
@@ -137,7 +144,9 @@ contract VaultFactory is Ownable2Step {
             asset,
             name,
             symbol,
-            initialYieldBps,
+            strategy,
+            feeRecipient,
+            performanceFeeBps,
             msg.sender
         );
 
