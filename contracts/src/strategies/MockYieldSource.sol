@@ -72,6 +72,10 @@ contract MockYieldSource is IYieldStrategy, Ownable {
     /// @param newApy New rate in basis points.
     event ApyUpdated(uint256 oldApy, uint256 newApy);
 
+    /// @notice Emitted when the authorised vault address is set.
+    /// @param vault The vault address granted deposit/withdraw access.
+    event VaultSet(address indexed vault);
+
     // -------------------------------------------------------------------------
     // Modifiers
     // -------------------------------------------------------------------------
@@ -107,6 +111,7 @@ contract MockYieldSource is IYieldStrategy, Ownable {
         if (vault_ == address(0)) revert ZeroAddress();
         if (vault != address(0)) revert NotVault(msg.sender); // already set
         vault = vault_;
+        emit VaultSet(vault_);
     }
 
     // -------------------------------------------------------------------------
@@ -156,9 +161,23 @@ contract MockYieldSource is IYieldStrategy, Ownable {
     /// @param newApyBps New annual yield rate in basis points.
     function setApy(uint256 newApyBps) external onlyOwner {
         if (newApyBps > MAX_APY_BPS) revert ApyTooHigh(newApyBps, MAX_APY_BPS);
-        _accrueYield();
+
+        // Compute pending yield at the current (old) rate before updating state.
+        uint256 elapsed = block.timestamp - lastAccrual;
+        uint256 balance = underlying.balanceOf(address(this));
+        uint256 yieldAmount = elapsed > 0 ? _pendingYield(balance, elapsed) : 0;
+
+        // Update all state before external calls (CEI).
+        lastAccrual = block.timestamp;
+        if (yieldAmount > 0) totalYieldAccrued += yieldAmount;
         emit ApyUpdated(apyBps, newApyBps);
         apyBps = newApyBps;
+
+        // External call last.
+        if (yieldAmount > 0) {
+            IMintable(address(underlying)).mint(address(this), yieldAmount);
+            emit YieldAccrued(yieldAmount, block.timestamp);
+        }
     }
 
     // -------------------------------------------------------------------------

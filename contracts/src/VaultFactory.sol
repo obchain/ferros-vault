@@ -54,7 +54,7 @@ contract VaultFactory is Ownable2Step {
     /// @notice Emitted when the shared implementation address is updated.
     /// @param oldImplementation The previous implementation address.
     /// @param newImplementation The new implementation address.
-    event ImplementationUpdated(address oldImplementation, address newImplementation);
+    event ImplementationUpdated(address indexed oldImplementation, address indexed newImplementation);
 
     /// @notice Emitted when an asset is added to the creation allowlist.
     /// @param asset The approved asset address.
