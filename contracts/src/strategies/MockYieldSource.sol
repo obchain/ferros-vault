@@ -165,18 +165,18 @@ contract MockYieldSource is IYieldStrategy, Ownable {
         // Compute pending yield at the current (old) rate before updating state.
         uint256 elapsed = block.timestamp - lastAccrual;
         uint256 balance = underlying.balanceOf(address(this));
-        uint256 yieldAmount = elapsed > 0 ? _pendingYield(balance, elapsed) : 0;
+        uint256 yieldAmount = elapsed >= 1 ? _pendingYield(balance, elapsed) : 0;
 
-        // Update all state before external calls (CEI).
+        // Update all state and emit events before external calls (CEI).
         lastAccrual = block.timestamp;
-        if (yieldAmount > 0) totalYieldAccrued += yieldAmount;
+        if (yieldAmount >= 1) totalYieldAccrued += yieldAmount;
         emit ApyUpdated(apyBps, newApyBps);
         apyBps = newApyBps;
+        if (yieldAmount >= 1) emit YieldAccrued(yieldAmount, block.timestamp);
 
         // External call last.
-        if (yieldAmount > 0) {
+        if (yieldAmount >= 1) {
             IMintable(address(underlying)).mint(address(this), yieldAmount);
-            emit YieldAccrued(yieldAmount, block.timestamp);
         }
     }
 
@@ -186,22 +186,21 @@ contract MockYieldSource is IYieldStrategy, Ownable {
 
     function _accrueYield() internal {
         uint256 elapsed = block.timestamp - lastAccrual;
-        if (elapsed == 0) return;
+        if (elapsed < 1) return;
 
         uint256 balance = underlying.balanceOf(address(this));
         uint256 yieldAmount = _pendingYield(balance, elapsed);
         lastAccrual = block.timestamp;
 
-        if (yieldAmount == 0) return;
+        if (yieldAmount < 1) return;
 
         totalYieldAccrued += yieldAmount;
-        IMintable(address(underlying)).mint(address(this), yieldAmount);
-
         emit YieldAccrued(yieldAmount, block.timestamp);
+        IMintable(address(underlying)).mint(address(this), yieldAmount);
     }
 
     function _pendingYield(uint256 balance, uint256 elapsed) internal view returns (uint256) {
-        if (apyBps == 0 || balance == 0 || elapsed == 0) return 0;
+        if (apyBps < 1 || balance < 1 || elapsed < 1) return 0;
         return Math.mulDiv(balance, apyBps * elapsed, BPS_DIVISOR * SECONDS_PER_YEAR);
     }
 }

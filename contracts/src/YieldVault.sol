@@ -301,8 +301,8 @@ contract YieldVault is
         internal
         override
     {
+        lastHarvestAssets = strategy.totalAssets() - assets;
         strategy.withdraw(assets);
-        lastHarvestAssets = strategy.totalAssets();
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 

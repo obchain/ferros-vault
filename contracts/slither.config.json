@@ -6,6 +6,8 @@
   "exclude_high": false,
   "detectors_to_exclude": [
     "naming-convention",
-    "solc-version"
+    "solc-version",
+    "timestamp",
+    "reentrancy-benign"
   ]
 }

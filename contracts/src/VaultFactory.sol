@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {YieldVault} from "./YieldVault.sol";
 
 /// @title VaultFactory
@@ -14,7 +15,7 @@ import {YieldVault} from "./YieldVault.sol";
 ///      Note: `InterestRateModel` is a standalone rate oracle reserved for a future
 ///      lending/borrowing extension. Vault yield rates are owner-controlled and are not
 ///      dynamically derived from utilization in this version.
-contract VaultFactory is Ownable2Step {
+contract VaultFactory is Ownable2Step, ReentrancyGuard {
     // -------------------------------------------------------------------------
     // State
     // -------------------------------------------------------------------------
@@ -135,7 +136,7 @@ contract VaultFactory is Ownable2Step {
         address feeRecipient,
         uint256 performanceFeeBps,
         address vaultOwner
-    ) external onlyOwner returns (address vault) {
+    ) external onlyOwner nonReentrant returns (address vault) {
         if (vaultOwner == address(0)) revert ZeroAddress();
         if (asset == address(0)) revert ZeroAddress();
         if (strategy == address(0)) revert ZeroAddress();
