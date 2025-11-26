@@ -15,8 +15,10 @@ import {IYieldStrategy} from "./interfaces/IYieldStrategy.sol";
 /// @notice ERC-4626 tokenized yield vault. Delegates asset management to a pluggable
 ///         IYieldStrategy — swap strategies without migrating user funds.
 /// @dev UUPS upgradeable via OZ v5. Performance fee minted as shares to feeRecipient
-///      on each harvest, aligning protocol revenue with user yield.
+///      on each harvest using the share-dilution formula so the invariant
+///      `feeShares / totalSupply == feeAssets / totalAssets` holds exactly (CRIT-02).
 ///      Inflation attack mitigated via `_decimalsOffset() = 18` (OZ v5 virtual shares).
+///      Strategy migration requires the vault to be paused (MED-01).
 contract YieldVault is
     ERC4626Upgradeable,
     UUPSUpgradeable,
@@ -53,7 +55,7 @@ contract YieldVault is
     uint256 public performanceFeeBps;
 
     // slot 3
-    /// @notice Total assets tracked at last harvest — used to calculate gain.
+    /// @notice Total strategy assets recorded at last harvest checkpoint.
     uint256 public lastHarvestAssets;
 
     // -------------------------------------------------------------------------
@@ -64,6 +66,8 @@ contract YieldVault is
     error NotAContract(address provided);
     error FeeTooHigh(uint256 provided, uint256 maximum);
     error StrategyAssetMismatch(address strategyAsset, address vaultAsset);
+    /// @notice Thrown when setStrategy is called while the vault is not paused.
+    error MustBePaused();
 
     // -------------------------------------------------------------------------
     // Events
@@ -137,6 +141,9 @@ contract YieldVault is
         strategy = IYieldStrategy(strategy_);
         feeRecipient = feeRecipient_;
         performanceFeeBps = performanceFeeBps_;
+
+        // Initialise baseline to avoid treating pre-existing strategy balance as gain (LOW-02).
+        lastHarvestAssets = IYieldStrategy(strategy_).totalAssets();
     }
 
     // -------------------------------------------------------------------------
@@ -144,9 +151,12 @@ contract YieldVault is
     // -------------------------------------------------------------------------
 
     /// @notice Replaces the active yield strategy.
-    /// @dev Harvests fees, withdraws all assets from old strategy, deposits into new one.
+    /// @dev Vault MUST be paused before migration to prevent deposits landing in the old
+    ///      strategy mid-migration (MED-01). Measures actual received tokens instead of
+    ///      trusting strategy.totalAssets() to prevent shortfall on illiquid strategies (HIGH-01).
     /// @param newStrategy Address of the new IYieldStrategy implementation.
     function setStrategy(address newStrategy) external onlyOwner nonReentrant {
+        if (!paused()) revert MustBePaused();
         if (newStrategy == address(0)) revert ZeroAddress();
         if (newStrategy.code.length == 0) revert NotAContract(newStrategy);
 
@@ -155,12 +165,18 @@ contract YieldVault is
 
         _harvest();
 
-        // Migrate all assets from old strategy to new
-        uint256 balance = strategy.totalAssets();
-        if (balance > 0) {
-            strategy.withdraw(balance);
-            IERC20(asset()).forceApprove(newStrategy, balance);
-            IYieldStrategy(newStrategy).deposit(balance);
+        uint256 oldBalance = strategy.totalAssets();
+        if (oldBalance > 0) {
+            uint256 balBefore = IERC20(asset()).balanceOf(address(this));
+            strategy.withdraw(oldBalance);
+            uint256 received = IERC20(asset()).balanceOf(address(this)) - balBefore;
+
+            if (received > 0) {
+                IERC20(asset()).forceApprove(newStrategy, received);
+                IYieldStrategy(newStrategy).deposit(received);
+                // Revoke residual approval (LOW-03).
+                IERC20(asset()).forceApprove(newStrategy, 0);
+            }
         }
 
         emit StrategyUpdated(address(strategy), newStrategy);
@@ -198,9 +214,9 @@ contract YieldVault is
     // Harvest
     // -------------------------------------------------------------------------
 
-    /// @notice Harvests yield, mints performance fee shares to feeRecipient.
-    /// @dev Permissionless — anyone can trigger a harvest (keeper pattern).
-    function harvest() external nonReentrant {
+    /// @notice Harvests yield and mints performance fee shares to feeRecipient.
+    /// @dev Restricted to owner to eliminate permissionless harvest sandwich attack (HIGH-02).
+    function harvest() external onlyOwner nonReentrant {
         _harvest();
     }
 
@@ -221,7 +237,6 @@ contract YieldVault is
         whenNotPaused
         returns (uint256 shares)
     {
-        _harvest();
         return super.deposit(assets, receiver);
     }
 
@@ -233,7 +248,6 @@ contract YieldVault is
         whenNotPaused
         returns (uint256 assets)
     {
-        _harvest();
         return super.mint(shares, receiver);
     }
 
@@ -245,7 +259,6 @@ contract YieldVault is
         whenNotPaused
         returns (uint256 shares)
     {
-        _harvest();
         return super.withdraw(assets, receiver, owner);
     }
 
@@ -257,7 +270,6 @@ contract YieldVault is
         whenNotPaused
         returns (uint256 assets)
     {
-        _harvest();
         return super.redeem(shares, receiver, owner);
     }
 
@@ -267,7 +279,7 @@ contract YieldVault is
 
     /// @notice Returns the protocol version string.
     function version() external pure returns (string memory) {
-        return "2.0.0";
+        return "1.0.0";
     }
 
     // -------------------------------------------------------------------------
@@ -275,10 +287,12 @@ contract YieldVault is
     // -------------------------------------------------------------------------
 
     /// @dev After OZ transfers assets from caller into this contract, forward to strategy.
+    ///      Revokes residual approval after deposit (LOW-03).
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
         super._deposit(caller, receiver, assets, shares);
         IERC20(asset()).forceApprove(address(strategy), assets);
         strategy.deposit(assets);
+        IERC20(asset()).forceApprove(address(strategy), 0);
         lastHarvestAssets = strategy.totalAssets();
     }
 
@@ -296,6 +310,9 @@ contract YieldVault is
     // Internal — fee harvest
     // -------------------------------------------------------------------------
 
+    /// @dev Share-dilution formula: mints fee shares so that
+    ///      feeShares / (totalSupply + feeShares) == feeAssets / totalAssets.
+    ///      This preserves the ERC-4626 share/asset invariant (CRIT-02).
     function _harvest() internal {
         uint256 current = strategy.totalAssets();
         if (current <= lastHarvestAssets) {
@@ -308,9 +325,11 @@ contract YieldVault is
 
         lastHarvestAssets = current;
 
-        if (feeAssets == 0 || feeRecipient == address(0)) return;
+        if (feeAssets == 0 || feeRecipient == address(0) || feeAssets >= current) return;
 
-        uint256 feeShares = convertToShares(feeAssets);
+        uint256 supply = totalSupply();
+        // feeShares = supply * feeAssets / (current - feeAssets)
+        uint256 feeShares = Math.mulDiv(supply, feeAssets, current - feeAssets, Math.Rounding.Floor);
         if (feeShares == 0) return;
 
         _mint(feeRecipient, feeShares);

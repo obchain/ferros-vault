@@ -42,6 +42,9 @@ contract YieldVaultFuzzTest is Test {
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         vault = YieldVault(address(proxy));
+
+        vm.prank(owner);
+        yieldSource.setVault(address(vault));
     }
 
     function _deposit(uint256 assets) internal returns (uint256 shares) {
@@ -130,6 +133,7 @@ contract YieldVaultFuzzTest is Test {
         yieldSource.accrueYield();
 
         uint256 gain = vault.totalAssets() - vault.lastHarvestAssets();
+        vm.prank(owner);
         vault.harvest();
 
         uint256 feeAssets = vault.convertToAssets(vault.balanceOf(treasury));

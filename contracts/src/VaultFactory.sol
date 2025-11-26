@@ -95,6 +95,7 @@ contract VaultFactory is Ownable2Step {
     /// @dev Existing vaults for the asset are unaffected.
     /// @param asset The ERC-20 token address to revoke.
     function revokeAsset(address asset) external onlyOwner {
+        if (asset == address(0)) revert ZeroAddress();
         approvedAssets[asset] = false;
         emit AssetRevoked(asset);
     }
@@ -115,7 +116,8 @@ contract VaultFactory is Ownable2Step {
     // -------------------------------------------------------------------------
 
     /// @notice Deploys a new ERC-1967 YieldVault proxy and registers it in the factory.
-    /// @dev The caller becomes the owner of the newly created vault.
+    /// @dev Restricted to the factory owner to prevent arbitrary callers from becoming
+    ///      vault owners with full UUPS upgrade and fee-configuration authority (HIGH-04).
     ///      The asset must be pre-approved via `approveAsset`.
     /// @param asset The address of the ERC-20 underlying asset.
     /// @param name The name of the vault share token.
@@ -123,6 +125,7 @@ contract VaultFactory is Ownable2Step {
     /// @param strategy The IYieldStrategy the vault will deposit into.
     /// @param feeRecipient Address that receives performance fee shares.
     /// @param performanceFeeBps Initial performance fee in basis points.
+    /// @param vaultOwner Address that will own and administer the deployed vault.
     /// @return vault The address of the deployed vault proxy.
     function createVault(
         address asset,
@@ -130,8 +133,10 @@ contract VaultFactory is Ownable2Step {
         string memory symbol,
         address strategy,
         address feeRecipient,
-        uint256 performanceFeeBps
-    ) external returns (address vault) {
+        uint256 performanceFeeBps,
+        address vaultOwner
+    ) external onlyOwner returns (address vault) {
+        if (vaultOwner == address(0)) revert ZeroAddress();
         if (asset == address(0)) revert ZeroAddress();
         if (strategy == address(0)) revert ZeroAddress();
         if (feeRecipient == address(0)) revert ZeroAddress();
@@ -147,7 +152,7 @@ contract VaultFactory is Ownable2Step {
             strategy,
             feeRecipient,
             performanceFeeBps,
-            msg.sender
+            vaultOwner
         );
 
         ERC1967Proxy proxy = new ERC1967Proxy(implementation, data);
@@ -156,7 +161,7 @@ contract VaultFactory is Ownable2Step {
         assetToVaults[asset].push(vault);
         vaultList.push(vault);
 
-        emit VaultCreated(vault, asset, msg.sender);
+        emit VaultCreated(vault, asset, vaultOwner);
     }
 
     // -------------------------------------------------------------------------

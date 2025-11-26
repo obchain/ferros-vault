@@ -9,11 +9,12 @@ import {IYieldStrategy} from "../interfaces/IYieldStrategy.sol";
 import {IMintable} from "../interfaces/IMintable.sol";
 
 /// @title MockYieldSource
-/// @notice Simulated ERC-4626-compatible yield source for testnet deployments.
+/// @notice Simulated yield source for Ethereum Sepolia testnet deployments only.
 /// @dev Generates yield by minting new underlying tokens at a configurable annual rate.
-///      No external protocol dependency — fully self-contained for Ethereum Sepolia testing.
-///      Replace with a real strategy (Aave, Compound, etc.) for production by implementing
-///      IYieldStrategy against the target protocol.
+///      No external protocol dependency — fully self-contained for testnet testing.
+///      `deposit` and `withdraw` are restricted to the authorised vault address set at
+///      construction to prevent unauthorised fund extraction (CRIT-01).
+///      Replace with a real strategy (e.g. Aave, Compound) for production use.
 contract MockYieldSource is IYieldStrategy, Ownable {
     using SafeERC20 for IERC20;
     using Math for uint256;
@@ -31,7 +32,12 @@ contract MockYieldSource is IYieldStrategy, Ownable {
     // -------------------------------------------------------------------------
 
     /// @notice The underlying ERC-20 token managed by this strategy.
+    // slither-disable-next-line naming-convention
     IERC20 public immutable underlying;
+
+    /// @notice The sole address permitted to call `deposit` and `withdraw`.
+    /// @dev Set via `setVault()` once after construction. Immutable once set.
+    address public vault;
 
     /// @notice Annual yield rate in basis points (e.g. 1000 = 10% APY).
     uint256 public apyBps;
@@ -49,6 +55,8 @@ contract MockYieldSource is IYieldStrategy, Ownable {
     error ApyTooHigh(uint256 provided, uint256 maximum);
     error ZeroAddress();
     error ZeroAmount();
+    /// @notice Thrown when a caller other than the authorised vault calls deposit or withdraw.
+    error NotVault(address caller);
 
     // -------------------------------------------------------------------------
     // Events
@@ -65,13 +73,23 @@ contract MockYieldSource is IYieldStrategy, Ownable {
     event ApyUpdated(uint256 oldApy, uint256 newApy);
 
     // -------------------------------------------------------------------------
+    // Modifiers
+    // -------------------------------------------------------------------------
+
+    /// @dev Restricts deposit and withdraw to the authorised vault only.
+    modifier onlyVault() {
+        if (msg.sender != vault) revert NotVault(msg.sender);
+        _;
+    }
+
+    // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
-    /// @notice Deploys the mock yield source with a configurable APY.
+    /// @notice Deploys the mock yield source.
     /// @param underlying_ The mintable ERC-20 token used as the underlying asset.
     /// @param apyBps_ Initial annual yield rate in basis points.
-    /// @param owner_ Address granted ownership of this contract.
+    /// @param owner_ Address granted ownership (APY configuration) of this contract.
     constructor(address underlying_, uint256 apyBps_, address owner_) Ownable(owner_) {
         if (underlying_ == address(0)) revert ZeroAddress();
         if (apyBps_ > MAX_APY_BPS) revert ApyTooHigh(apyBps_, MAX_APY_BPS);
@@ -79,6 +97,16 @@ contract MockYieldSource is IYieldStrategy, Ownable {
         underlying = IERC20(underlying_);
         apyBps = apyBps_;
         lastAccrual = block.timestamp;
+    }
+
+    /// @notice Sets the authorised vault address. Can only be called once by the owner.
+    /// @dev Called after vault proxy deployment since the vault address is not known at
+    ///      strategy construction time. Immutable once set.
+    /// @param vault_ The vault proxy address authorised to call deposit and withdraw.
+    function setVault(address vault_) external onlyOwner {
+        if (vault_ == address(0)) revert ZeroAddress();
+        if (vault != address(0)) revert NotVault(msg.sender); // already set
+        vault = vault_;
     }
 
     // -------------------------------------------------------------------------
@@ -91,23 +119,25 @@ contract MockYieldSource is IYieldStrategy, Ownable {
     }
 
     /// @inheritdoc IYieldStrategy
+    /// @dev Returns only physically checkpointed balance — pending yield excluded
+    ///      to prevent double-counting in vault harvest calculations (HIGH-03).
     function totalAssets() public view override returns (uint256) {
-        uint256 balance = underlying.balanceOf(address(this));
-        return balance + _pendingYield(balance);
+        return underlying.balanceOf(address(this));
     }
 
     /// @inheritdoc IYieldStrategy
-    /// @dev Caller (YieldVault) must have approved this contract before calling.
-    function deposit(uint256 assets) external override {
+    /// @dev Restricted to authorised vault only (CRIT-01).
+    ///      Caller must have approved this contract to spend `assets` beforehand.
+    function deposit(uint256 assets) external override onlyVault {
         if (assets == 0) revert ZeroAmount();
         underlying.safeTransferFrom(msg.sender, address(this), assets);
     }
 
     /// @inheritdoc IYieldStrategy
-    /// @dev Sends `assets` of underlying back to caller (YieldVault).
-    function withdraw(uint256 assets) external override {
+    /// @dev Restricted to authorised vault only (CRIT-01).
+    ///      Checkpoints yield before transfer so balance is accurate post-withdrawal.
+    function withdraw(uint256 assets) external override onlyVault {
         if (assets == 0) revert ZeroAmount();
-        // Checkpoint yield before any balance change
         _accrueYield();
         underlying.safeTransfer(msg.sender, assets);
     }
@@ -117,7 +147,7 @@ contract MockYieldSource is IYieldStrategy, Ownable {
     // -------------------------------------------------------------------------
 
     /// @notice Checkpoints and mints all pending yield into this contract.
-    /// @dev Callable by anyone — permissionless keeper pattern.
+    /// @dev Permissionless keeper — anyone can advance the yield checkpoint.
     function accrueYield() external {
         _accrueYield();
     }
@@ -140,7 +170,7 @@ contract MockYieldSource is IYieldStrategy, Ownable {
         if (elapsed == 0) return;
 
         uint256 balance = underlying.balanceOf(address(this));
-        uint256 yieldAmount = _pendingYield(balance);
+        uint256 yieldAmount = _pendingYield(balance, elapsed);
         lastAccrual = block.timestamp;
 
         if (yieldAmount == 0) return;
@@ -151,9 +181,8 @@ contract MockYieldSource is IYieldStrategy, Ownable {
         emit YieldAccrued(yieldAmount, block.timestamp);
     }
 
-    function _pendingYield(uint256 balance) internal view returns (uint256) {
-        if (apyBps == 0 || balance == 0) return 0;
-        uint256 elapsed = block.timestamp - lastAccrual;
+    function _pendingYield(uint256 balance, uint256 elapsed) internal view returns (uint256) {
+        if (apyBps == 0 || balance == 0 || elapsed == 0) return 0;
         return Math.mulDiv(balance, apyBps * elapsed, BPS_DIVISOR * SECONDS_PER_YEAR);
     }
 }

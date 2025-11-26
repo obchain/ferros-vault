@@ -49,6 +49,10 @@ contract YieldVaultTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         vault = YieldVault(address(proxy));
 
+        // Wire vault address into strategy after proxy deployment (CRIT-01 fix).
+        vm.prank(owner);
+        yieldSource.setVault(address(vault));
+
         asset.mint(alice, 10_000e18);
         asset.mint(bob, 10_000e18);
     }
@@ -74,7 +78,7 @@ contract YieldVaultTest is Test {
     }
 
     function test_Initialize_SetsVersion() public {
-        assertEq(vault.version(), "2.0.0");
+        assertEq(vault.version(), "1.0.0");
     }
 
     function test_Initialize_CannotReinitialize() public {
@@ -200,6 +204,8 @@ contract YieldVaultTest is Test {
         _depositAlice();
 
         vm.warp(block.timestamp + 30 days);
+        yieldSource.accrueYield();
+        vm.prank(owner);
         vault.harvest();
 
         assertGt(vault.balanceOf(treasury), 0, "treasury must receive fee shares");
@@ -224,6 +230,7 @@ contract YieldVaultTest is Test {
         uint256 gainBefore = vault.totalAssets() - vault.lastHarvestAssets();
         uint256 expectedFeeAssets = (gainBefore * PERF_FEE_BPS) / 10_000;
 
+        vm.prank(owner);
         vault.harvest();
 
         uint256 feeShares = vault.balanceOf(treasury);
@@ -233,6 +240,7 @@ contract YieldVaultTest is Test {
 
     function test_Harvest_NoFeeWhenNoGain() public {
         _depositAlice();
+        vm.prank(owner);
         vault.harvest();
 
         assertEq(vault.balanceOf(treasury), 0, "no gain = no fee");
