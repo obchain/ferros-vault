@@ -287,21 +287,26 @@ contract YieldVault is
     // -------------------------------------------------------------------------
 
     /// @dev After OZ transfers assets from caller into this contract, forward to strategy.
+    ///      Caches strategy and asset to avoid repeated SLOADs.
     ///      Revokes residual approval after deposit (LOW-03).
+    ///      Updates lastHarvestAssets arithmetically — avoids external totalAssets() call.
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
+        IYieldStrategy _strategy = strategy;
+        IERC20 _asset = IERC20(asset());
         super._deposit(caller, receiver, assets, shares);
-        IERC20(asset()).forceApprove(address(strategy), assets);
-        strategy.deposit(assets);
-        IERC20(asset()).forceApprove(address(strategy), 0);
-        lastHarvestAssets = strategy.totalAssets();
+        _asset.forceApprove(address(_strategy), assets);
+        _strategy.deposit(assets);
+        _asset.forceApprove(address(_strategy), 0);
+        lastHarvestAssets += assets;
     }
 
     /// @dev Pull assets from strategy before OZ transfers them to receiver.
+    ///      Updates lastHarvestAssets arithmetically — avoids external totalAssets() call.
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
         override
     {
-        lastHarvestAssets = strategy.totalAssets() - assets;
+        lastHarvestAssets -= assets;
         strategy.withdraw(assets);
         super._withdraw(caller, receiver, owner, assets, shares);
     }
