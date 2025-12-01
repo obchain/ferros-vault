@@ -1,0 +1,62 @@
+type Vault @entity(immutable: false) {
+  id: ID!
+  asset: Bytes!
+  name: String!
+  symbol: String!
+  totalAssets: BigInt!
+  totalShares: BigInt!
+  performanceFeeBps: BigInt!
+  createdAt: BigInt!
+  txCount: BigInt!
+  deposits: [Deposit!]! @derivedFrom(field: "vault")
+  withdraws: [Withdraw!]! @derivedFrom(field: "vault")
+  yieldAccruals: [YieldAccrual!]! @derivedFrom(field: "vault")
+  dailySnapshots: [VaultDailySnapshot!]! @derivedFrom(field: "vault")
+}
+
+type Deposit @entity(immutable: true) {
+  id: ID!
+  vault: Vault!
+  user: User!
+  assets: BigInt!
+  shares: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type Withdraw @entity(immutable: true) {
+  id: ID!
+  vault: Vault!
+  user: User!
+  assets: BigInt!
+  shares: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type YieldAccrual @entity(immutable: true) {
+  id: ID!
+  vault: Vault!
+  gain: BigInt!
+  feeShares: BigInt!
+  apy: BigDecimal!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type User @entity(immutable: false) {
+  id: ID!
+  totalDeposited: BigInt!
+  totalWithdrawn: BigInt!
+  deposits: [Deposit!]! @derivedFrom(field: "user")
+  withdraws: [Withdraw!]! @derivedFrom(field: "user")
+}
+
+type VaultDailySnapshot @entity(immutable: false) {
+  id: ID!
+  vault: Vault!
+  totalAssets: BigInt!
+  totalShares: BigInt!
+  apy: BigDecimal!
+  timestamp: BigInt!
+}
