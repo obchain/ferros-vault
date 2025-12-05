@@ -1,0 +1,91 @@
+query GetVaultOverview($vault: ID!) {
+  vault(id: $vault) {
+    id
+    asset
+    name
+    symbol
+    totalAssets
+    totalShares
+    performanceFeeBps
+    createdAt
+    txCount
+  }
+}
+
+query GetUserPositions($user: ID!) {
+  user(id: $user) {
+    id
+    totalDeposited
+    totalWithdrawn
+    deposits(orderBy: timestamp, orderDirection: desc, first: 10) {
+      id
+      assets
+      shares
+      timestamp
+      txHash
+      vault {
+        id
+        symbol
+      }
+    }
+    withdraws(orderBy: timestamp, orderDirection: desc, first: 10) {
+      id
+      assets
+      shares
+      timestamp
+      txHash
+      vault {
+        id
+        symbol
+      }
+    }
+  }
+}
+
+query GetDepositHistory($vault: ID!, $first: Int!, $skip: Int!) {
+  deposits(
+    where: { vault: $vault }
+    orderBy: timestamp
+    orderDirection: desc
+    first: $first
+    skip: $skip
+  ) {
+    id
+    user {
+      id
+    }
+    assets
+    shares
+    timestamp
+    txHash
+  }
+}
+
+query GetVaultDailySnapshots($vault: ID!, $first: Int!) {
+  vaultDailySnapshots(
+    where: { vault: $vault }
+    orderBy: timestamp
+    orderDirection: desc
+    first: $first
+  ) {
+    id
+    totalAssets
+    totalShares
+    apy
+    timestamp
+  }
+}
+
+query GetAllVaults {
+  vaults(orderBy: createdAt, orderDirection: desc) {
+    id
+    asset
+    name
+    symbol
+    totalAssets
+    totalShares
+    performanceFeeBps
+    createdAt
+    txCount
+  }
+}
