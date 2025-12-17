@@ -16,11 +16,21 @@ const bebasNeue = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
-  title: "Ferros Vault — DeFi Yield Protocol",
-  description: "Institutional-grade ERC-4626 yield vault on Ethereum Sepolia",
+  title: "Ferros Vault | ERC-4626 DeFi Yield Protocol",
+  description: "Deposit USDC, earn yield, and withdraw anytime with Ferros Vault — an institutional-grade ERC-4626 tokenized yield vault built on Ethereum Sepolia with upgradeable proxy architecture.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
+  },
+  openGraph: {
+    title: "Ferros Vault | ERC-4626 DeFi Yield Protocol",
+    description: "Deposit USDC, earn yield, and withdraw anytime with Ferros Vault — an institutional-grade ERC-4626 tokenized yield vault built on Ethereum Sepolia with upgradeable proxy architecture.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Ferros Vault | ERC-4626 DeFi Yield Protocol",
+    description: "Deposit USDC, earn yield, and withdraw anytime with Ferros Vault — an institutional-grade ERC-4626 tokenized yield vault built on Ethereum Sepolia with upgradeable proxy architecture.",
   },
 };
 

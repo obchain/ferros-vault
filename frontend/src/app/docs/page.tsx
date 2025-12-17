@@ -96,7 +96,7 @@ export default function DocsPage() {
     <>
       <Navbar />
 
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 16px", paddingTop: "calc(56px + 40px)", display: "flex", gap: 0, minHeight: "100vh" }}>
+      <div className="docs-layout" style={{ maxWidth: 1280, margin: "0 auto", padding: "0 16px", paddingTop: "calc(56px + 40px)", display: "flex", gap: 0, minHeight: "100vh" }}>
 
         {/* Sidebar */}
         <aside style={{
@@ -183,10 +183,8 @@ export default function DocsPage() {
                 ["YieldVaultImpl", "The logic contract behind the proxy. Inherits ERC4626Upgradeable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable."],
                 ["IYieldStrategy", "Interface for pluggable yield strategies. Methods: deposit(), withdraw(), totalAssets(). MockYieldSource implements this for testnet."],
               ].map(([name, desc]) => (
-                <div key={name as string} style={{ display: "flex", gap: 20, padding: "16px 0", borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ minWidth: 160, flexShrink: 0 }}>
-                    <span className="font-display" style={{ fontSize: 15, color: "var(--cyan)", letterSpacing: "0.04em" }}>{name}</span>
-                  </div>
+                <div key={name as string} style={{ display: "flex", flexDirection: "column", gap: 6, padding: "16px 0", borderBottom: "1px solid var(--border)" }}>
+                  <span className="font-display" style={{ fontSize: 15, color: "var(--cyan)", letterSpacing: "0.04em" }}>{name}</span>
                   <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>{desc}</div>
                 </div>
               ))}
@@ -244,25 +242,16 @@ export default function DocsPage() {
               <SectionTitle>INTERFACE</SectionTitle>
               <Para>YieldVault implements the full ERC-4626 standard. All view functions are read-only and free to call.</Para>
 
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 560 }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--border-bright)" }}>
-                      {["FUNCTION", "RETURNS", "DESCRIPTION"].map((h) => (
-                        <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "var(--text-muted)", fontSize: 10, letterSpacing: "0.12em", fontWeight: 500 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {INTERFACE_ROWS.map(([fn, ret, desc]) => (
-                      <tr key={fn} style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td style={{ padding: "11px 12px", fontFamily: "var(--font-mono)", color: "var(--cyan)", fontSize: 11 }}>{fn}</td>
-                        <td style={{ padding: "11px 12px", fontFamily: "var(--font-mono)", color: "var(--amber)", fontSize: 11, whiteSpace: "nowrap" }}>{ret}</td>
-                        <td style={{ padding: "11px 12px", color: "var(--text-secondary)" }}>{desc}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {INTERFACE_ROWS.map(([fn, ret, desc]) => (
+                  <div key={fn} className="panel-card" style={{ padding: "14px 16px" }}>
+                    <div style={{ fontFamily: "var(--font-mono)", color: "var(--cyan)", fontSize: 11, wordBreak: "break-all", marginBottom: 6 }}>{fn}</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--amber)", fontSize: 11 }}>→ {ret}</span>
+                      <span style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "right" }}>{desc}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

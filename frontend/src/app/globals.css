@@ -172,6 +172,7 @@ body > * { position: relative; z-index: 1; }
   .action-row .btn-primary,
   .action-row .btn-ghost { width: 100% !important; }
   .chart-header { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
+  .docs-layout  { padding-top: calc(56px + 24px) !important; flex-direction: column !important; }
 }
 
 @media (max-width: 480px) {

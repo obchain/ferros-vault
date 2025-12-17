@@ -95,29 +95,31 @@ export function Navbar() {
                 onClick={() => setMenuOpen((v) => !v)}
                 aria-label="Toggle menu"
                 style={{
-                  display: "flex", flexDirection: "column", justifyContent: "center",
-                  gap: 5, background: "none", border: "1px solid var(--border-bright)",
-                  cursor: "pointer", padding: "7px 8px", flexShrink: 0,
+                  position: "relative", width: 34, height: 34,
+                  background: "none", border: "1px solid var(--border-bright)",
+                  cursor: "pointer", flexShrink: 0,
                 }}
               >
                 <span style={{
-                  display: "block", width: 18, height: 2,
+                  position: "absolute", left: 8, width: 18, height: 2,
                   background: menuOpen ? "var(--amber)" : "var(--text-secondary)",
-                  transition: "transform 0.2s, background 0.2s",
-                  transform: menuOpen ? "rotate(45deg) translate(0px, 7px)" : "none",
+                  transition: "transform 0.2s, background 0.2s, top 0.2s",
+                  top: menuOpen ? 16 : 10,
+                  transform: menuOpen ? "rotate(45deg)" : "none",
                   transformOrigin: "center",
                 }} />
                 <span style={{
-                  display: "block", width: 18, height: 2,
+                  position: "absolute", left: 8, top: 16, width: 18, height: 2,
                   background: "var(--text-secondary)",
-                  transition: "opacity 0.2s",
+                  transition: "opacity 0.15s",
                   opacity: menuOpen ? 0 : 1,
                 }} />
                 <span style={{
-                  display: "block", width: 18, height: 2,
+                  position: "absolute", left: 8, width: 18, height: 2,
                   background: menuOpen ? "var(--amber)" : "var(--text-secondary)",
-                  transition: "transform 0.2s, background 0.2s",
-                  transform: menuOpen ? "rotate(-45deg) translate(0px, -7px)" : "none",
+                  transition: "transform 0.2s, background 0.2s, top 0.2s",
+                  top: menuOpen ? 16 : 22,
+                  transform: menuOpen ? "rotate(-45deg)" : "none",
                   transformOrigin: "center",
                 }} />
               </button>
