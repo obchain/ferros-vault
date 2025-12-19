@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 530" width="860" height="530">
+  <defs>
+    <marker id="arrow-amber" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#F5A623"/>
+    </marker>
+    <marker id="arrow-cyan" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#00D4FF"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#00E676"/>
+    </marker>
+    <marker id="arrow-muted" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#4A5568"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="860" height="530" fill="#080B10" rx="6"/>
+
+  <!-- Subtle hex grid -->
+  <pattern id="hex" x="0" y="0" width="60" height="104" patternUnits="userSpaceOnUse">
+    <path d="M30 0 L60 17.3 L60 52 L30 69.3 L0 52 L0 17.3Z" fill="none" stroke="#1E2840" stroke-width="0.4" opacity="0.5"/>
+    <path d="M30 34.6 L60 52 L60 86.6 L30 104 L0 86.6 L0 52Z" fill="none" stroke="#1E2840" stroke-width="0.4" opacity="0.5"/>
+  </pattern>
+  <rect width="860" height="530" fill="url(#hex)"/>
+
+  <!-- Title -->
+  <text x="430" y="28" fill="#F5A623" font-size="12" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="5" font-weight="600">FERROS VAULT — SYSTEM ARCHITECTURE</text>
+  <rect x="160" y="33" width="540" height="1" fill="#F5A623" opacity="0.3"/>
+
+  <!-- ── LAYER 0: USER ── -->
+  <circle cx="430" cy="68" r="18" fill="#0E1219" stroke="#F5A623" stroke-width="1.5"/>
+  <!-- user icon -->
+  <circle cx="430" cy="63" r="5" fill="#F5A623"/>
+  <path d="M419,78 Q430,70 441,78" fill="#F5A623"/>
+  <text x="430" y="97" fill="#F5A623" font-size="9" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="3">USER WALLET</text>
+
+  <!-- Arrow: User → Frontend -->
+  <line x1="430" y1="101" x2="430" y2="120" stroke="#F5A623" stroke-width="1.2" marker-end="url(#arrow-amber)"/>
+  <text x="438" y="113" fill="#F5A623" font-size="8" font-family="'IBM Plex Mono',monospace" opacity="0.7">RPC</text>
+
+  <!-- ── LAYER 1: FRONTEND ── -->
+  <rect x="70" y="124" width="720" height="58" fill="#0E1219" stroke="#F5A623" stroke-width="1.5" rx="2"/>
+  <rect x="70" y="124" width="4" height="58" fill="#F5A623" rx="1"/>
+  <text x="420" y="143" fill="#F5A623" font-size="11" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="3" font-weight="600">FRONTEND</text>
+  <text x="420" y="161" fill="#8A96A8" font-size="9" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="1">Next.js 14  ·  wagmi v2  ·  RainbowKit v2  ·  Apollo Client  ·  Recharts</text>
+  <!-- Layer badge -->
+  <rect x="74" y="169" width="716" height="13" fill="#131820" opacity="0.6"/>
+  <text x="420" y="179" fill="#4A5568" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="2">PRESENTATION LAYER</text>
+
+  <!-- Arrow: Frontend → YieldVault -->
+  <line x1="230" y1="182" x2="170" y2="228" stroke="#F5A623" stroke-width="1.2" marker-end="url(#arrow-amber)"/>
+  <text x="178" y="210" fill="#F5A623" font-size="7.5" font-family="'IBM Plex Mono',monospace" opacity="0.8">deposit()</text>
+  <text x="166" y="220" fill="#F5A623" font-size="7.5" font-family="'IBM Plex Mono',monospace" opacity="0.8">withdraw()</text>
+
+  <!-- Arrow: Frontend → VaultFactory -->
+  <line x1="430" y1="182" x2="430" y2="228" stroke="#F5A623" stroke-width="1.2" marker-end="url(#arrow-amber)"/>
+  <text x="436" y="210" fill="#F5A623" font-size="7.5" font-family="'IBM Plex Mono',monospace" opacity="0.8">read</text>
+
+  <!-- Arrow: Frontend ← TheGraph (GraphQL) -->
+  <path d="M720,182 Q780,240 730,370" fill="none" stroke="#00D4FF" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arrow-cyan)"/>
+  <text x="762" y="268" fill="#00D4FF" font-size="7.5" font-family="'IBM Plex Mono',monospace" opacity="0.85">GraphQL</text>
+
+  <!-- ── LAYER 2: CONTRACTS ── -->
+
+  <!-- YieldVault box -->
+  <rect x="48" y="232" width="215" height="68" fill="#0E1219" stroke="#F5A623" stroke-width="1.5" rx="2"/>
+  <rect x="48" y="232" width="215" height="18" fill="#F5A623" opacity="0.08" rx="2"/>
+  <text x="156" y="245" fill="#F5A623" font-size="10" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="2" font-weight="600">YIELD VAULT</text>
+  <text x="156" y="263" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">ERC-4626 · UUPS Proxy</text>
+  <text x="156" y="276" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">ReentrancyGuard · Ownable2Step</text>
+  <text x="156" y="289" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">0xA079…9C18</text>
+
+  <!-- VaultFactory box -->
+  <rect x="323" y="232" width="215" height="68" fill="#0E1219" stroke="#2A3A5C" stroke-width="1.5" rx="2"/>
+  <rect x="323" y="232" width="215" height="18" fill="#2A3A5C" opacity="0.4" rx="2"/>
+  <text x="430" y="245" fill="#A8B4C4" font-size="10" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="2" font-weight="600">VAULT FACTORY</text>
+  <text x="430" y="263" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">ERC-1967 Proxy Deployer</text>
+  <text x="430" y="276" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">Ownable2Step · nonReentrant</text>
+  <text x="430" y="289" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">0x01BB…798D</text>
+
+  <!-- InterestRateModel box -->
+  <rect x="598" y="232" width="215" height="68" fill="#0E1219" stroke="#2A3A5C" stroke-width="1.5" rx="2"/>
+  <rect x="598" y="232" width="215" height="18" fill="#2A3A5C" opacity="0.4" rx="2"/>
+  <text x="706" y="245" fill="#A8B4C4" font-size="10" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="2" font-weight="600">RATE MODEL</text>
+  <text x="706" y="263" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">Two-slope Utilization</text>
+  <text x="706" y="276" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">Compound V2-inspired</text>
+  <text x="706" y="289" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">Pure math · No state</text>
+
+  <!-- VaultFactory → YieldVault arrow (deploys) -->
+  <line x1="323" y1="258" x2="263" y2="258" stroke="#2A3A5C" stroke-width="1.2" marker-end="url(#arrow-muted)"/>
+  <text x="280" y="252" fill="#4A5568" font-size="7" font-family="'IBM Plex Mono',monospace">deploys</text>
+
+  <!-- Arrow: YieldVault → MockYieldSource (strategy delegate) -->
+  <line x1="156" y1="300" x2="156" y2="368" stroke="#00E676" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+  <text x="162" y="338" fill="#00E676" font-size="7.5" font-family="'IBM Plex Mono',monospace" opacity="0.85">delegate</text>
+
+  <!-- Events arrow: contracts → The Graph -->
+  <path d="M263,280 Q460,320 598,393" fill="none" stroke="#2A3A5C" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-muted)"/>
+  <text x="420" y="322" fill="#4A5568" font-size="7.5" font-family="'IBM Plex Mono',monospace" text-anchor="middle">emit events</text>
+
+  <!-- UUPS Implementation label -->
+  <rect x="48" y="308" width="215" height="16" fill="#131820" rx="0"/>
+  <text x="156" y="320" fill="#4A5568" font-size="7.5" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="1.5">IMPL: 0xe67F…537a5</text>
+
+  <!-- ── LAYER 3: STRATEGY + GRAPH ── -->
+
+  <!-- MockYieldSource box -->
+  <rect x="48" y="372" width="215" height="62" fill="#0E1219" stroke="#00E676" stroke-width="1.5" rx="2"/>
+  <rect x="48" y="372" width="215" height="18" fill="#00E676" opacity="0.07" rx="2"/>
+  <text x="156" y="385" fill="#00E676" font-size="10" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="2" font-weight="600">MOCK YIELD SOURCE</text>
+  <text x="156" y="403" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">IYieldStrategy · 10% APY</text>
+  <text x="156" y="416" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">Token minting · Testnet only</text>
+  <text x="156" y="427" fill="#4A5568" font-size="7.5" font-family="'IBM Plex Mono',monospace" text-anchor="middle">0x31d9…1036</text>
+
+  <!-- The Graph box -->
+  <rect x="598" y="372" width="215" height="62" fill="#0E1219" stroke="#00D4FF" stroke-width="1.5" rx="2"/>
+  <rect x="598" y="372" width="215" height="18" fill="#00D4FF" opacity="0.07" rx="2"/>
+  <text x="706" y="385" fill="#00D4FF" font-size="10" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="2" font-weight="600">THE GRAPH</text>
+  <text x="706" y="403" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">AssemblyScript Mappings</text>
+  <text x="706" y="416" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">Vault · Deposit · Withdraw · APY</text>
+  <text x="706" y="427" fill="#4A5568" font-size="7.5" font-family="'IBM Plex Mono',monospace" text-anchor="middle">Subgraph Studio</text>
+
+  <!-- USDC token box (MockERC20) -->
+  <rect x="323" y="372" width="215" height="62" fill="#0E1219" stroke="#2A3A5C" stroke-width="1.5" rx="2"/>
+  <rect x="323" y="372" width="215" height="18" fill="#2A3A5C" opacity="0.3" rx="2"/>
+  <text x="430" y="385" fill="#A8B4C4" font-size="10" font-family="'IBM Plex Mono',monospace" text-anchor="middle" letter-spacing="2" font-weight="600">MOCK USDC</text>
+  <text x="430" y="403" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">ERC-20 · 6 decimals</text>
+  <text x="430" y="416" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace" text-anchor="middle">Mintable · Testnet token</text>
+  <text x="430" y="427" fill="#4A5568" font-size="7.5" font-family="'IBM Plex Mono',monospace" text-anchor="middle">0x38C3…F744</text>
+
+  <!-- YieldVault ↔ MockUSDC arrow -->
+  <line x1="263" y1="266" x2="323" y2="400" stroke="#2A3A5C" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- ── NETWORK BADGE ── -->
+  <rect x="48" y="452" width="764" height="24" fill="#0E1219" stroke="#1E2840" stroke-width="1" rx="2"/>
+  <circle cx="68" cy="464" r="5" fill="#00E676" opacity="0.8"/>
+  <circle cx="68" cy="464" r="5" fill="none" stroke="#00E676" stroke-width="0.5">
+    <animate attributeName="r" values="5;9;5" dur="2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.8;0;0.8" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  <text x="82" y="468" fill="#6B7A92" font-size="8.5" font-family="'IBM Plex Mono',monospace" letter-spacing="2">ETHEREUM SEPOLIA  ·  CHAIN ID: 11155111  ·  SOLIDITY 0.8.24  ·  OZ v5 UPGRADEABLE</text>
+
+  <!-- ── LEGEND ── -->
+  <line x1="430" y1="488" x2="460" y2="488" stroke="#F5A623" stroke-width="1.5"/>
+  <text x="465" y="491" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace">User interaction</text>
+  <line x1="570" y1="488" x2="600" y2="488" stroke="#00E676" stroke-width="1.5"/>
+  <text x="605" y="491" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace">Strategy call</text>
+  <line x1="685" y1="488" x2="715" y2="488" stroke="#00D4FF" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="720" y="491" fill="#6B7A92" font-size="8" font-family="'IBM Plex Mono',monospace">Event / data</text>
+
+  <text x="48" y="491" fill="#4A5568" font-size="8" font-family="'IBM Plex Mono',monospace" letter-spacing="2">FERROS VAULT v1.0</text>
+</svg>
