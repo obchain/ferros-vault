@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount } from "wagmi";
 import { VAULT_ADDRESS } from "@/lib/wagmi";
 
 export function Navbar() {
@@ -23,6 +24,8 @@ export function Navbar() {
     setMounted(true);
     return () => mq.removeEventListener("change", handler as (e: MediaQueryListEvent) => void);
   }, []);
+
+  const { isConnected } = useAccount();
 
   // Before hydration, treat as desktop to match SSR output
   const mobile = mounted && isMobile;
@@ -73,8 +76,8 @@ export function Navbar() {
           {/* Right side */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
 
-            {/* Desktop contract address */}
-            {!mobile && (
+            {/* Desktop contract address — only when wallet connected */}
+            {!mobile && mounted && isConnected && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
                 <span className="pulse-dot" />
                 <span style={{ color: "var(--text-muted)", letterSpacing: "0.1em", fontWeight: 500 }}>VAULT</span>
@@ -154,13 +157,15 @@ export function Navbar() {
               {label}
             </button>
           ))}
-          <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", gap: 8, fontSize: 11, borderTop: "1px solid var(--border)" }}>
-            <span className="pulse-dot" />
-            <span style={{ color: "var(--text-muted)", fontWeight: 500, letterSpacing: "0.1em" }}>VAULT</span>
-            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
-              {VAULT_ADDRESS.slice(0, 6)}…{VAULT_ADDRESS.slice(-4)}
-            </span>
-          </div>
+          {isConnected && (
+            <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", gap: 8, fontSize: 11, borderTop: "1px solid var(--border)" }}>
+              <span className="pulse-dot" />
+              <span style={{ color: "var(--text-muted)", fontWeight: 500, letterSpacing: "0.1em" }}>VAULT</span>
+              <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
+                {VAULT_ADDRESS.slice(0, 6)}…{VAULT_ADDRESS.slice(-4)}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </>

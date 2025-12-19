@@ -108,7 +108,7 @@ cp .env.example .env
 # Fill in PRIVATE_KEY, ARBITRUM_SEPOLIA_RPC, ETHERSCAN_API_KEY
 
 forge script script/Deploy.s.sol:Deploy \
-  --rpc-url $SEPOLIA_RPC \
+  --rpc-url $ETHEREUM_SEPOLIA_RPC \
   --broadcast \
   --verify
 ```
@@ -191,14 +191,27 @@ Full findings documented in [SECURITY.md](contracts/SECURITY.md).
 | Variable | Description |
 |---|---|
 | `PRIVATE_KEY` | Deployer wallet private key |
-| `SEPOLIA_RPC` | Ethereum Sepolia RPC URL |
-| `ETHERSCAN_API_KEY` | Etherscan V2 API key for verification |
-| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WalletConnect project ID |
+| `ETHEREUM_SEPOLIA_RPC` | Ethereum Sepolia RPC URL (Alchemy/Infura) |
+| `ETHERSCAN_API_KEY` | Etherscan V2 API key for contract verification |
+| `GRAPH_DEPLOY_KEY` | The Graph Studio deploy key |
+| `SUBGRAPH_URL` | The Graph Studio query endpoint |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Reown (WalletConnect) project ID |
 | `NEXT_PUBLIC_VAULT_ADDRESS` | Deployed YieldVault proxy address |
-| `NEXT_PUBLIC_SUBGRAPH_URL` | The Graph subgraph query URL |
+| `NEXT_PUBLIC_FACTORY_ADDRESS` | Deployed VaultFactory address |
+| `NEXT_PUBLIC_SUBGRAPH_URL` | Subgraph query URL for frontend Apollo client |
 
 ---
 
-## License
+## Known Limitations
 
-MIT
+This is a testnet protocol. The following gaps exist between the current implementation and a production-grade institutional deployment:
+
+**Centralization Risk**
+Owner holds unrestricted upgrade authority via UUPS. `Ownable2Step` prevents accidental transfers but a single EOA remains a single point of failure. Production path: replace owner with a Gnosis Safe multisig and add a `TimelockController` (48–72h delay) in front of all upgrade calls.
+
+**Oracle Dependency**
+`MockYieldSource` targets a fixed-rate stable asset (USDC). No price oracle is integrated. Any strategy involving non-stable or volatile assets would require Chainlink Price Feeds to compute accurate share prices and prevent manipulation via inflated `totalAssets()` reporting.
+
+**No Circuit Breaker**
+The vault has no emergency pause mechanism. A production vault handling significant TVL should inherit `PausableUpgradeable` and expose a guardian-controlled `pause()` function to halt deposits and withdrawals during an incident or exploit. This is a standard institutional risk management requirement.
+

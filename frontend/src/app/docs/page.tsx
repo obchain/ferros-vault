@@ -42,8 +42,10 @@ const FAQ_ROWS = [
   ["Is this production-ready?", "No. This is a testnet deployment on Ethereum Sepolia using a mock yield source. Do not deposit real funds."],
   ["How is yield generated?", "The MockYieldSource mints tokens to simulate 10% APY. On mainnet this would be replaced by a real strategy (Aave, Compound, etc.)."],
   ["What is the performance fee?", "A configurable % taken from accrued yield. Controlled by the vault owner. Default 10%."],
-  ["Can the vault be upgraded?", "Yes. It uses UUPS (ERC-1967) proxy pattern. Only the owner can authorize upgrades via _authorizeUpgrade()."],
+  ["Can the vault be upgraded?", "Yes. It uses UUPS (ERC-1967) proxy pattern. Only the owner can authorize upgrades via _authorizeUpgrade(). For production, this should be guarded by a multisig and timelock."],
   ["How are shares priced?", "sharePrice = totalAssets / totalSupply. As yield accrues, totalAssets grows while totalSupply stays flat — shares appreciate."],
+  ["Is there a pause or emergency stop?", "No. This testnet version does not implement Pausable. A production vault should expose a guardian-controlled pause() to halt deposits and withdrawals during an incident."],
+  ["What happens with non-stable assets?", "This vault only supports USDC (stable). Volatile asset strategies would require Chainlink Price Feeds to accurately compute totalAssets() and prevent price manipulation attacks."],
 ];
 
 function CodeBlock({ children }: { children: string }) {
@@ -176,6 +178,70 @@ export default function DocsPage() {
             <div className="fade-in-1">
               <SectionTitle>ARCHITECTURE</SectionTitle>
               <Para>The system is composed of four on-chain contracts connected via interfaces.</Para>
+
+              {/* Responsive Architecture Diagram */}
+              <div style={{ margin: "28px 0", overflowX: "auto" }}>
+                <div style={{ minWidth: 300, display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
+
+                  {/* User */}
+                  <div style={{ display: "flex", justifyContent: "space-between", width: "100%", maxWidth: 600, gap: 12 }}>
+                    <div className="panel-card" style={{ flex: 1, padding: "12px 16px", textAlign: "center", borderColor: "var(--border-bright)" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.12em", marginBottom: 4 }}>ACTOR</div>
+                      <div className="font-display" style={{ fontSize: 16, color: "var(--text-primary)", letterSpacing: "0.06em" }}>USER</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>deposit / withdraw</div>
+                    </div>
+                    <div className="panel-card" style={{ flex: 1, padding: "12px 16px", textAlign: "center", borderColor: "var(--amber-dim)" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.12em", marginBottom: 4 }}>FACTORY</div>
+                      <div className="font-display" style={{ fontSize: 16, color: "var(--amber)", letterSpacing: "0.06em" }}>VaultFactory</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>ERC-1967 deploy</div>
+                    </div>
+                  </div>
+
+                  {/* Arrow down */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", width: "100%", maxWidth: 600, paddingLeft: "calc(25% - 8px)", height: 32 }}>
+                    <div style={{ width: 2, height: 32, background: "var(--cyan-dim)", margin: "0 auto" }} />
+                  </div>
+
+                  {/* YieldVault Proxy */}
+                  <div style={{ width: "100%", maxWidth: 600 }}>
+                    <div className="panel-card" style={{ padding: "14px 20px", textAlign: "center", borderColor: "var(--cyan-dim)", borderWidth: 2 }}>
+                      <div style={{ fontSize: 10, color: "var(--cyan)", letterSpacing: "0.14em", marginBottom: 4 }}>ERC-4626 · UUPS PROXY · ERC-1967</div>
+                      <div className="font-display" style={{ fontSize: 20, color: "var(--cyan)", letterSpacing: "0.08em" }}>YieldVault</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>deposit · withdraw · redeem · convertToShares · totalAssets</div>
+                    </div>
+                  </div>
+
+                  {/* Arrow down */}
+                  <div style={{ width: "100%", maxWidth: 600, display: "flex", justifyContent: "space-between", height: 32, paddingLeft: "15%", paddingRight: "15%" }}>
+                    <div style={{ width: 2, background: "var(--border-bright)" }} />
+                    <div style={{ width: 2, background: "var(--border-bright)" }} />
+                  </div>
+
+                  {/* Impl + Strategy */}
+                  <div style={{ display: "flex", width: "100%", maxWidth: 600, gap: 12 }}>
+                    <div className="panel-card" style={{ flex: 1, padding: "12px 16px", textAlign: "center", borderColor: "var(--border-bright)" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.12em", marginBottom: 4 }}>LOGIC CONTRACT</div>
+                      <div className="font-display" style={{ fontSize: 15, color: "var(--text-primary)", letterSpacing: "0.04em" }}>YieldVaultImpl</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>ERC4626 · UUPS · Ownable · ReentrancyGuard</div>
+                    </div>
+                    <div className="panel-card" style={{ flex: 1, padding: "12px 16px", textAlign: "center", borderColor: "var(--green)" }}>
+                      <div style={{ fontSize: 10, color: "var(--green)", letterSpacing: "0.12em", marginBottom: 4 }}>STRATEGY</div>
+                      <div className="font-display" style={{ fontSize: 15, color: "var(--green)", letterSpacing: "0.04em" }}>MockYieldSource</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>IYieldStrategy · 10% APY · testnet</div>
+                    </div>
+                  </div>
+
+                  {/* Legend */}
+                  <div style={{ marginTop: 20, display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "center" }}>
+                    {[["var(--cyan)", "Core Vault"], ["var(--amber)", "Factory"], ["var(--green)", "Strategy"], ["var(--border-bright)", "Logic / Impl"]].map(([color, label]) => (
+                      <div key={label as string} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
+                        <div style={{ width: 10, height: 10, border: `2px solid ${color}` }} />
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
               {[
                 ["VaultFactory", "Owner-controlled factory. Deploys ERC-1967 proxy instances of YieldVault. Maintains a registry of vaults per asset."],
@@ -356,6 +422,41 @@ yieldAmount = balance × apyBps × elapsed
                   ))}
                 </div>
               </div>
+
+              <div style={{ marginTop: 32, marginBottom: 16 }}>
+                <div style={{ width: 32, height: 2, background: "var(--amber)", marginBottom: 12 }} />
+                <div className="font-display" style={{ fontSize: 20, color: "var(--text-primary)", letterSpacing: "0.06em", marginBottom: 4 }}>KNOWN LIMITATIONS</div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Gaps between this testnet deployment and a production institutional vault.</div>
+              </div>
+
+              {[
+                {
+                  color: "var(--amber)",
+                  label: "CENTRALIZATION RISK",
+                  title: "Single-owner upgrade authority",
+                  desc: "Ownable2Step prevents accidental ownership transfers, but a single EOA holds unrestricted UUPS upgrade authority. Production path: replace owner with a Gnosis Safe multisig and add a TimelockController (48–72h delay) in front of all upgrade calls.",
+                },
+                {
+                  color: "var(--cyan)",
+                  label: "ORACLE DEPENDENCY",
+                  title: "No price feed for non-stable assets",
+                  desc: "MockYieldSource targets USDC (1:1 stable). Any strategy involving volatile assets (ETH, wBTC, LSTs) requires Chainlink Price Feeds inside totalAssets() to compute accurate share prices. Without it, manipulated spot prices could enable sandwich attacks against depositors.",
+                },
+                {
+                  color: "var(--red)",
+                  label: "CIRCUIT BREAKER",
+                  title: "No emergency pause mechanism",
+                  desc: "The vault has no pause() function. A production vault handling significant TVL should inherit PausableUpgradeable and expose a guardian-controlled pause to halt deposits and withdrawals during an incident. This is a standard institutional risk management requirement.",
+                },
+              ].map(({ color, label, title, desc }) => (
+                <div key={label} className="panel-card" style={{ padding: "16px 20px", marginBottom: 8, borderLeft: `3px solid ${color}` }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                    <span className="tag" style={{ borderColor: color, color }}>{label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{title}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.75 }}>{desc}</div>
+                </div>
+              ))}
             </div>
           )}
 
